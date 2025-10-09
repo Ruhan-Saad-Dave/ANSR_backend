@@ -1,244 +1,181 @@
+import os
 import re
-from datetime import datetime
 import json
-from fastapi import HTTPException
-from firebase_admin import firestore
+from datetime import datetime
+from dotenv import load_dotenv
 
-# Assuming these services are in the same directory or accessible through the python path
-from services.alert import limit_checker
-from services.anomaly import detect_amount_anomalies_by_category, detect_time_anomalies
-from core.setup import initialize_firebase 
+import firebase_admin
+from firebase_admin import credentials, firestore
+from flask import Flask, request, jsonify
 
-DB = initialize_firebase()
+from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
 
-def get_user_transactions(user_id):
-    """Fetches recent transactions for a user from Firestore to be used in anomaly detection."""
+# --- CONFIGURATION & SETUP ---
+load_dotenv()
+
+# 1a. Firebase Initialization
+try:
+    cred = credentials.Certificate("ansr-7f506-firebase-adminsdk-fbsvc-052e7ed895.json")
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    print("--- Firebase Initialized Successfully ---")
+except Exception as e:
+    print(f"Firebase initialization failed: {e}\nPlease ensure 'serviceAccountKey.json' is present and valid.")
+    db = None
+
+# 1b. LangChain (Gemini) Initialization
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise ValueError("GOOGLE_API_KEY environment variable not set.")
+
+# --- 2. REGEX PARSER ---
+TRANSACTION_PATTERNS = [
+    {"name": "P2P UPI Credit", "type": "credit", "method": "UPI",
+     "regex": r"(?P<vendor>.+?)\s+paid you\s+(?:₹|Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\.?"},
+    {"name": "BOI UPI Debit", "type": "debit", "method": "UPI",
+     "regex": r"(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+debited\s+A/c(?P<account>\w*\d+)\s+and credited to\s+(?P<vendor>.+?)\s+via\s+UPI"},
+    {"name": "Credit Card Purchase", "type": "debit", "method": "Card",
+     "regex": r"Transaction\s+of\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+at\s+(?P<vendor>.+?)\s+on\s+.+Card\s+ending\s+(?P<account>\d{4})\."},
+    {"name": "UPI Debit", "type": "debit", "method": "UPI",
+     "regex": r"Paid\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+to\s+(?P<vendor>.+?)\s+from\s+.+a/c\s+via\s+UPI"},
+]
+
+
+def parse_with_regex(message):
+    for pattern in TRANSACTION_PATTERNS:
+        match = re.search(pattern["regex"], message, re.IGNORECASE)
+        if match:
+            data = match.groupdict()
+            return {
+                "amount": float(data.get("amount", "0").replace(",", "")),
+                "sender_name": data.get("vendor", "Unknown").strip(),
+                "payment_type": "income" if pattern["type"] == "credit" else "expense",
+                "payment_method": pattern.get("method", "Unknown"),
+                "category": "Uncategorized",
+            }
+    return None
+
+
+# --- 3. LLM PARSER ---
+class TransactionDetails(BaseModel):
+    amount: float = Field(description="The numeric amount of the transaction.")
+    sender_name: str = Field(description="The name of the person or vendor involved.")
+    payment_method: str = Field(description="The method of payment (e.g., UPI, Card, Bank Account).")
+    payment_type: str = Field(description="The type of transaction, either 'income' or 'expense'.")
+    category: str = Field(description="A suggested category (e.g., Food, Shopping, Salary, Travel).")
+
+
+def parse_with_llm(message: str):
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+    structured_llm = llm.with_structured_output(TransactionDetails)
+    prompt = f"Analyze the following financial transaction message and extract the details. Message: \"{message}\""
     try:
-        docs = DB.collection('Expense tracker').document(user_id).collection('transactions').limit(50).stream()
-        # The anomaly script expects a list of dicts with 'Amount' and 'Category' keys
-        transactions = []
-        for doc in docs:
-            data = doc.to_dict()
-            transactions.append({
-                "ID": doc.id, # The anomaly script uses 'ID' for the transaction id
-                "Amount": data.get("amount"),
-                "Category": data.get("category"),
-                "timestamp": {"hour": data.get("timestamp", {}).get("hour")}
-            })
-        return transactions
+        response = structured_llm.invoke(prompt)
+        response_dict = response.dict()
+        response_dict['message'] = message
+        return response_dict
     except Exception as e:
-        print(f"Could not fetch historical transactions for user {user_id}: {e}")
-        return []
+        print(f"LLM parsing failed: {e}")
+        return None
 
-def clean_raw_data(raw_data_string):
-    """
-    Cleans a raw data string and returns a dictionary with the cleaned data.
 
-    Args:
-        raw_data_string: A string in the format "ID, timestamp, application, sender (optional), exact message"
+# --- 4. HYBRID PARSER CONTROLLER ---
+def parse_transaction(message):
+    print("--- Attempting to parse with Regex... ---")
+    result = parse_with_regex(message)
+    if result:
+        print("--- Regex parsing successful. ---")
+        result['message'] = message
+        return result
 
-    Returns:
-        A dictionary containing the cleaned data, or None if the format is invalid.
-    """
-    parts = [p.strip() for p in raw_data_string.split(',', 4)]
-    if len(parts) < 4:
-        return None  # Invalid format
+    print("--- Regex failed. Falling back to LLM parser... ---")
+    result = parse_with_llm(message)
+    if result:
+        print("--- LLM parsing successful. ---")
+    return result
 
-    raw_id, raw_timestamp, application, raw_message = None, None, None, None
-    raw_sender = None
 
-    if len(parts) == 5:
-        raw_id, raw_timestamp, application, raw_sender, raw_message = parts
-    else:
-        raw_id, raw_timestamp, application, raw_message = parts
-
-    # 1. Parse timestamp
+# --- 5. MAIN DATA FORMATTING & DATABASE FUNCTIONS ---
+def format_transaction_data(timestamp_str, app_name, raw_message):
+    # <<< CHANGE HERE: This function is now much simpler
     try:
-        # Assuming timestamp is in a recognizable format, e.g., ISO 8601
-        dt_object = datetime.fromisoformat(raw_timestamp)
-        timestamp = {
-            "year": dt_object.year,
-            "month": dt_object.month,
-            "day": dt_object.day,
-            "hour": dt_object.hour,
-        }
-    except ValueError:
-        # Handle other potential timestamp formats or errors
-        timestamp = {"year": None, "month": None, "day": None, "hour": None}
+        dt_object = datetime.fromisoformat(timestamp_str)
+    except (ValueError, TypeError):
+        return None
 
-    # 2. Extract sender
-    sender = raw_sender if raw_sender else "Unknown"
+    # Use the hybrid parser to get transaction details
+    details = parse_transaction(raw_message)
+    if not details:
+        return None
 
-    # 3. Parse the message for payment details
-    payment_method = "Unknown"
-    payment_type = "Unknown"
-    amount = None
-    category = "Uncategorized"  # Default category
-    message = raw_message
-
-    # Simple regex to find amount (assuming format like $123.45 or 123.45)
-    amount_match = re.search(r'(\d+\.?\d*)', raw_message)
-    if amount_match:
-        amount = float(amount_match.group(1))
-
-    # Determine payment method
-    if "credit" in raw_message.lower():
-        payment_method = "credit"
-    elif "upi" in raw_message.lower():
-        payment_method = "UPI"
-
-    # Determine payment type
-    if "incoming" in raw_message.lower() or "received" in raw_message.lower():
-        payment_type = "incoming"
-    elif "outgoing" in raw_message.lower() or "sent" in raw_message.lower():
-        payment_type = "outgoing"
-
-    cleaned_data = {
-        "id": raw_id,
-        "timestamp": timestamp,
-        "sender": sender,
-        "payment_method": payment_method,
-        "payment_type": payment_type,
-        "amount": amount,
-        "category": category,
-        "message": message,
+    # Assemble the final, flat dictionary for Firestore
+    final_data = {
+        "year": dt_object.year,
+        "month": dt_object.month,
+        "date": dt_object.day,
+        "day": dt_object.strftime("%A"),
+        "amount": details.get("amount"),
+        "sender_name": details.get("sender_name"),
+        "payment_method": details.get("payment_method"),
+        "payment_type": details.get("payment_type"),
+        "category": details.get("category"),
+        "message": details.get("message"),
+        "source_app": app_name
     }
+    return final_data
 
-    return cleaned_data
 
-def _save_transaction(user_id, cleaned_data, is_anomaly):
-    """Saves the processed transaction to Firestore."""
-    if not DB:
-        return "Firestore not initialized. Cannot save transaction."
-
+def add_transaction_to_db(formatted_transaction, user_id):
+    if not db: return False
     try:
-        # Prepare the data according to the schema in data.txt
-        ts = cleaned_data.get("timestamp", {})
-        dt_object = datetime(ts.get("year", 1970), ts.get("month", 1), ts.get("day", 1))
+        payment_type = formatted_transaction.get("payment_type")
+        if payment_type == 'income':
+            collection_name = 'Income'
+        elif payment_type == 'expense':
+            collection_name = 'Expenses'
+        else:
+            return False
 
-        transaction_to_save = {
-            "year": ts.get("year"),
-            "month": ts.get("month"),
-            "date": ts.get("day"),
-            "day": dt_object.strftime("%A"),
-            "amount": cleaned_data.get("amount"),
-            "sender_name": cleaned_data.get("sender"),
-            "payment_method": cleaned_data.get("payment_method"),
-            "payment_type": cleaned_data.get("payment_type"),
-            "anomaly": is_anomaly,
-            "category": cleaned_data.get("category"),
-            "message": cleaned_data.get("message"),
-        }
-
-        # Add the transaction to the subcollection, letting Firestore generate the ID
-        DB.collection('Expense tracker').document(user_id).collection('transactions').add(transaction_to_save)
-        return "Transaction saved successfully."
-
+        user_doc_ref = db.collection(collection_name).document(user_id)
+        user_doc_ref.collection('transactions').add(formatted_transaction)
+        print(f"✅ DB Write: Successfully wrote transaction for UserID '{user_id}'.")
+        return True
     except Exception as e:
-        error_message = f"Error saving transaction for user {user_id}: {e}"
-        print(error_message)
-        return error_message
-
-def _update_summary(user_id, transaction_data):
-    """
-    Updates the user's summary document in Firestore.
-    Creates the document if it does not exist.
-    """
-    if not DB:
-        return "Firestore not initialized."
-
-    amount = transaction_data.get("amount")
-    payment_type = transaction_data.get("payment_type")
-
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return "Invalid amount for summary update."
-
-    try:
-        doc_ref = DB.collection('summary').document(user_id)
-        inc_out = firestore.Increment(amount if payment_type == 'outgoing' else 0)
-        inc_in = firestore.Increment(amount if payment_type == 'incoming' else 0)
-        inc_cashflow = firestore.Increment(amount if payment_type == 'incoming' else -amount)
-
-        update_data = {
-            'day_out': inc_out, 'week_out': inc_out, 'month_out': inc_out, 'year_out': inc_out,
-            'day_in': inc_in, 'week_in': inc_in, 'month_in': inc_in, 'year_in': inc_in,
-            'day_cashflow': inc_cashflow, 'week_cashflow': inc_cashflow, 'month_cashflow': inc_cashflow, 'year_cashflow': inc_cashflow
-        }
-        # Set with merge=True will create or update the document atomically.
-        doc_ref.set(update_data, merge=True)
-        return f"Summary updated for user {user_id}."
-
-    except Exception as e:
-        error_message = f"Error updating summary for user {user_id}: {e}"
-        print(error_message)
-        return error_message
+        print(f"❌ DB Write Error: {e}")
+        return False
 
 
-def process_transaction(raw_data_string):
-    """
-    Processes a raw transaction string, cleans it, checks for alerts and anomalies,
-    and saves it to the database.
-    """
-    cleaned_data = clean_raw_data(raw_data_string)
-    user_id = cleaned_data.get("id") if cleaned_data else None
+# --- 6. FLASK APPLICATION ---
+app = Flask(__name__)
 
-    # Stricter validation: Raise a 400 error if user_id is missing, empty, or just whitespace.
-    if not user_id or not user_id.strip():
-        raise HTTPException(status_code=400, detail="Invalid or empty user ID provided in raw data.")
 
-    # If validation passes, proceed.
-    print(f"--- Processing for valid User ID: {user_id} ---")
+@app.route('/parse', methods=['POST'])
+def parse_endpoint():
+    # <<< CHANGE HERE: Updated to handle new JSON structure
+    data = request.get_json()
+    required_fields = ["user_id", "timestamp", "application_name", "raw_message"]
+    if not data or not all(field in data for field in required_fields):
+        return jsonify({"error": f"Missing required fields: {required_fields}"}), 400
 
-    alert_message = limit_checker(user_id)
-    is_anomaly = False
-    anomaly_message = "No anomalies detected"
+    user_id = data['user_id']
 
-    historical_transactions = get_user_transactions(user_id)
-    
-    anomaly_check_data = {
-        "ID": cleaned_data["id"],
-        "Amount": cleaned_data["amount"],
-        "Category": cleaned_data["category"],
-        "timestamp": cleaned_data["timestamp"]
-    }
-    all_transactions_for_anomaly_check = historical_transactions + [anomaly_check_data]
+    # Pass the individual fields to the formatting function
+    formatted_data = format_transaction_data(
+        timestamp_str=data['timestamp'],
+        app_name=data['application_name'],
+        raw_message=data['raw_message']
+    )
 
-    high_amount_ids = detect_amount_anomalies_by_category(all_transactions_for_anomaly_check)
-    unusual_time_ids = detect_time_anomalies(all_transactions_for_anomaly_check)
+    if not formatted_data:
+        return jsonify({"error": "Failed to parse transaction from raw_message"}), 400
 
-    reasons = []
-    if user_id in high_amount_ids:
-        reasons.append(f"Amount is significantly higher than other '{cleaned_data.get('category', 'N/A')}' expenses.")
-    if user_id in unusual_time_ids:
-        reasons.append("Transaction occurred at an unusual time (late night).")
+    db_success = add_transaction_to_db(formatted_data, user_id)
+    if not db_success:
+        return jsonify({"error": "Data parsed but failed to save to database"}), 500
 
-    if reasons:
-        is_anomaly = True
-        anomaly_message = "Potential anomaly detected: " + " ".join(reasons)
-
-    summary_status = _update_summary(user_id, cleaned_data)
-    transaction_status = _save_transaction(user_id, cleaned_data, is_anomaly)
-    firebase_save_status = f"Summary: {summary_status} | Transaction: {transaction_status}"
-    print(f"--- Firebase Status: {firebase_save_status} ---")
-
-    return {
-        "cleaned_data": cleaned_data,
-        "alert_message": alert_message,
-        "anomaly_message": anomaly_message,
-        "firebase_status": firebase_save_status
-    }
+    return jsonify(formatted_data)
 
 
 if __name__ == '__main__':
-    # Example Usage
-    raw_data_1 = "user123, 2025-10-09T14:30:00, MyApp, John Doe, incoming credit payment of 50.00 for groceries"
-    raw_data_2 = "user123, 2025-10-09T23:00:00, YourApp, , outgoing upi payment of 2500.50 for rent" # high amount but recurring
-    raw_data_3 = "user456, 2025-10-10T02:00:00, AnotherApp, Jane Smith, sent 100.00 via upi" # unusual time
-
-    processed_1 = process_transaction(raw_data_1)
-    processed_2 = process_transaction(raw_data_2)
-    processed_3 = process_transaction(raw_data_3)
-
-    print(json.dumps(processed_1, indent=2))
-    print(json.dumps(processed_2, indent=2))
-    print(json.dumps(processed_3, indent=2))
+    app.run(debug=True, port=5000)
