@@ -1,8 +1,12 @@
 import os
 import re
 import json
+<<<<<<< Updated upstream
 from datetime import datetime
 from dotenv import load_dotenv
+=======
+from fastapi import HTTPException
+>>>>>>> Stashed changes
 
 import firebase_admin
 from firebase_admin import credentials, firestore

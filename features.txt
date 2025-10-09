@@ -1,4 +1,4 @@
-()Subscription & Regular Payment Detection → identifies recurring spends (e.g., Netflix, Gym, Rent) for better tracking.
+Subscription & Regular Payment Detection → identifies recurring spends (e.g., Netflix, Gym, Rent) for better tracking.
 Smart Alerts & Fraud Anomaly Detection → warns before exceeding spending limits, detects scams or unusual activity.
 Refund & Income Tracking → automatically recognizes refunds, salary credits, and income streams.
 Bill & Cashflow Prediction → forecasts upcoming bills and monthly cashflow for planning.

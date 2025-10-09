@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
-from routers import alert, prediction, intake 
+from routers import alert, prediction, intake, recurring 
 from core.setup import initialize_firebase
 
 DB = initialize_firebase()
@@ -18,6 +18,7 @@ app = FastAPI(
 app.include_router(alert.alert_router, prefix="/alert")
 app.include_router(prediction.router, prefix="/prediction")
 app.include_router(intake.router, prefix="/intake")
+app.include_router(recurring.router, prefix="/recurring")
 
 
 @app.get("/")
