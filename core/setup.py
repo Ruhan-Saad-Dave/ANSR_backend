@@ -1,14 +1,13 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
+from dotenv import load_dotenv
+import os
 
-service_account_key_path = "core/ansr.json"
+load_dotenv()
 
 def initialize_firebase():
     """
-    Initializes the Firebase Admin SDK.
-
-    Args:
-        service_account_key_path (str): The file path to your Firebase service account key JSON file.
+    Initializes the Firebase Admin SDK from environment variables.
     
     Returns:
         db: Firestore client instance if successful, else None.
@@ -16,7 +15,8 @@ def initialize_firebase():
     global DB
     try:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(service_account_key_path)
+            cred_dict = os.getenv("ANSR_KEY")
+            cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
         
         db = firestore.client()
@@ -24,5 +24,5 @@ def initialize_firebase():
         return db
     except Exception as e:
         print(f"🔥 Error initializing Firebase: {e}")
-        print("   Please ensure the path to your service account key is correct and the file is valid.")
+        print("   Please ensure your Firebase environment variables are set correctly.")
         return None

@@ -1,39 +1,9 @@
-import os
 import re
-import json
-<<<<<<< Updated upstream
 from datetime import datetime
-from dotenv import load_dotenv
-=======
-from fastapi import HTTPException
->>>>>>> Stashed changes
-
-import firebase_admin
-from firebase_admin import credentials, firestore
-from flask import Flask, request, jsonify
-
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-# --- CONFIGURATION & SETUP ---
-load_dotenv()
-
-# 1a. Firebase Initialization
-try:
-    cred = credentials.Certificate("ansr-7f506-firebase-adminsdk-fbsvc-052e7ed895.json")
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("--- Firebase Initialized Successfully ---")
-except Exception as e:
-    print(f"Firebase initialization failed: {e}\nPlease ensure 'serviceAccountKey.json' is present and valid.")
-    db = None
-
-# 1b. LangChain (Gemini) Initialization
-api_key = os.getenv("GOOGLE_API_KEY")
-if not api_key:
-    raise ValueError("GOOGLE_API_KEY environment variable not set.")
-
-# --- 2. REGEX PARSER ---
+# --- 1. REGEX PATTERNS ---
 TRANSACTION_PATTERNS = [
     {"name": "P2P UPI Credit", "type": "credit", "method": "UPI",
      "regex": r"(?P<vendor>.+?)\s+paid you\s+(?:₹|Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\.?"},
@@ -45,8 +15,12 @@ TRANSACTION_PATTERNS = [
      "regex": r"Paid\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+to\s+(?P<vendor>.+?)\s+from\s+.+a/c\s+via\s+UPI"},
 ]
 
-
-def parse_with_regex(message):
+ 
+# --- 2. REGEX PARSER ---
+def parse_with_regex(message: str):
+    """
+    Parses a message using a list of predefined regex patterns.
+    """
     for pattern in TRANSACTION_PATTERNS:
         match = re.search(pattern["regex"], message, re.IGNORECASE)
         if match:
@@ -71,6 +45,10 @@ class TransactionDetails(BaseModel):
 
 
 def parse_with_llm(message: str):
+    """
+    Parses a message using a structured output LLM.
+    """
+    # Assuming the Google API key is set in the environment variables
     llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(TransactionDetails)
     prompt = f"Analyze the following financial transaction message and extract the details. Message: \"{message}\""
@@ -85,7 +63,11 @@ def parse_with_llm(message: str):
 
 
 # --- 4. HYBRID PARSER CONTROLLER ---
-def parse_transaction(message):
+def parse_transaction(message: str):
+    """
+    Parses a transaction message using a hybrid approach.
+    First, it tries with regex. If that fails, it falls back to an LLM.
+    """
     print("--- Attempting to parse with Regex... ---")
     result = parse_with_regex(message)
     if result:
@@ -100,20 +82,22 @@ def parse_transaction(message):
     return result
 
 
-# --- 5. MAIN DATA FORMATTING & DATABASE FUNCTIONS ---
-def format_transaction_data(timestamp_str, app_name, raw_message):
-    # <<< CHANGE HERE: This function is now much simpler
+# --- 5. MAIN DATA FORMATTING FUNCTION ---
+def format_transaction_data(timestamp_str: str, app_name: str, raw_message: str):
+    """
+    Takes raw transaction data, parses it, and formats it into a structured dictionary.
+    """
     try:
         dt_object = datetime.fromisoformat(timestamp_str)
     except (ValueError, TypeError):
+        print(f"Invalid timestamp format: {timestamp_str}")
         return None
 
-    # Use the hybrid parser to get transaction details
     details = parse_transaction(raw_message)
     if not details:
         return None
 
-    # Assemble the final, flat dictionary for Firestore
+    # Assemble the final, flat dictionary
     final_data = {
         "year": dt_object.year,
         "month": dt_object.month,
@@ -128,58 +112,3 @@ def format_transaction_data(timestamp_str, app_name, raw_message):
         "source_app": app_name
     }
     return final_data
-
-
-def add_transaction_to_db(formatted_transaction, user_id):
-    if not db: return False
-    try:
-        payment_type = formatted_transaction.get("payment_type")
-        if payment_type == 'income':
-            collection_name = 'Income'
-        elif payment_type == 'expense':
-            collection_name = 'Expenses'
-        else:
-            return False
-
-        user_doc_ref = db.collection(collection_name).document(user_id)
-        user_doc_ref.collection('transactions').add(formatted_transaction)
-        print(f"✅ DB Write: Successfully wrote transaction for UserID '{user_id}'.")
-        return True
-    except Exception as e:
-        print(f"❌ DB Write Error: {e}")
-        return False
-
-
-# --- 6. FLASK APPLICATION ---
-app = Flask(__name__)
-
-
-@app.route('/parse', methods=['POST'])
-def parse_endpoint():
-    # <<< CHANGE HERE: Updated to handle new JSON structure
-    data = request.get_json()
-    required_fields = ["user_id", "timestamp", "application_name", "raw_message"]
-    if not data or not all(field in data for field in required_fields):
-        return jsonify({"error": f"Missing required fields: {required_fields}"}), 400
-
-    user_id = data['user_id']
-
-    # Pass the individual fields to the formatting function
-    formatted_data = format_transaction_data(
-        timestamp_str=data['timestamp'],
-        app_name=data['application_name'],
-        raw_message=data['raw_message']
-    )
-
-    if not formatted_data:
-        return jsonify({"error": "Failed to parse transaction from raw_message"}), 400
-
-    db_success = add_transaction_to_db(formatted_data, user_id)
-    if not db_success:
-        return jsonify({"error": "Data parsed but failed to save to database"}), 500
-
-    return jsonify(formatted_data)
-
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
