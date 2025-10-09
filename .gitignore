@@ -2,3 +2,5 @@
 .venv/
 gemini.md
 info.txt
+__pycache__/
+services/ansr.json
