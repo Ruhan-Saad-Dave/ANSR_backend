@@ -2,7 +2,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 service_account_key_path = "core/ansr.json"
-DB = None
 
 def initialize_firebase():
     """
@@ -21,7 +20,6 @@ def initialize_firebase():
             firebase_admin.initialize_app(cred)
         
         db = firestore.client()
-        DB = db
         print("✅ Firebase connection successful.")
         return db
     except Exception as e:

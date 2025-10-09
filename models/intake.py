@@ -1,6 +1,13 @@
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
+class TransactionData(BaseModel):
+    user_id: str
+    timestamp: str
+    application_name: str
+    sender_name: Optional[str] = None
+    raw_message: str
+
 class Timestamp(BaseModel):
     year: Optional[int]
     month: Optional[int]

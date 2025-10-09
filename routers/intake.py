@@ -1,15 +1,10 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
 
 # Import the processing function from your service
 from services.parsing_engine import process_transaction
 from models.intake import TransactionData
 
 router = APIRouter()
-
-# Define the request body model using Pydantic
-# This ensures the incoming data has the correct structure
 
 
 @router.post("/process", tags=["Intake"])

@@ -5,9 +5,10 @@ from firebase_admin import credentials, firestore
 from fastapi import APIRouter 
 
 from models.alert import Alert
-from core.setup import DB
+from core.setup import initialize_firebase
 
 alert_router = APIRouter()
+DB = initialize_firebase()
 
 @alert_router.post("/set_daily_alert", tags = ["alert"])
 async def set_daily_alert(alert: Alert):

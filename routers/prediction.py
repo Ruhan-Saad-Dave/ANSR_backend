@@ -6,9 +6,9 @@ from services.prediction import (
     get_monthly_spending_trend,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["Prediction"])
 
-@router.get("/prediction/spending/{user_id}")
+@router.get("/spending/{user_id}")
 def predict_spending(user_id: str, timeframe: str = 'monthly'):
     """
     Predicts future expenses for a given user.
@@ -34,7 +34,7 @@ def predict_spending(user_id: str, timeframe: str = 'monthly'):
             
     return {"user_id": user_id, "timeframe": timeframe, "prediction": prediction}
 
-@router.get("/prediction/cashflow/{user_id}")
+@router.get("/cashflow/{user_id}")
 def predict_cashflow(user_id: str, timeframe: str = 'monthly'):
     """
     Predicts future cashflow for a given user.
@@ -60,7 +60,7 @@ def predict_cashflow(user_id: str, timeframe: str = 'monthly'):
             
     return {"user_id": user_id, "timeframe": timeframe, "prediction": prediction}
 
-@router.get("/prediction/spending/trend/daily/{user_id}")
+@router.get("/spending/trend/daily/{user_id}")
 def daily_spending_trend(user_id: str):
     """
     Gets the daily spending trend for the last 7 days.
@@ -78,7 +78,7 @@ def daily_spending_trend(user_id: str):
             
     return {"user_id": user_id, "daily_spending_trend": trend}
 
-@router.get("/prediction/spending/trend/monthly/{user_id}")
+@router.get("/spending/trend/monthly/{user_id}")
 def monthly_spending_trend(user_id: str):
     """
     Gets the monthly spending trend for the last 12 months.
