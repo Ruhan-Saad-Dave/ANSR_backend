@@ -1,95 +1,136 @@
-
+from flask import Flask, request, jsonify
 import re
 from datetime import datetime
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-def clean_raw_data(raw_data_string):
-    """
-    Cleans a raw data string and returns a dictionary with the cleaned data.
+# --- 1. FIREBASE INITIALIZATION ---
+try:
+    cred = credentials.Certificate("ansr-7f506-firebase-adminsdk-fbsvc-052e7ed895.json")
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"Firebase initialization failed: {e}\nPlease ensure 'serviceAccountKey.json' is present and valid.")
+    db = None
 
-    Args:
-        raw_data_string: A string in the format "ID, timestamp, application, sender (optional), exact message"
+# --- 2. PATTERN LIBRARY ---
+TRANSACTION_PATTERNS = [
+    {"name": "P2P UPI Credit", "type": "credit", "method": "UPI",
+     "regex": r"(?P<vendor>.+?)\s+paid you\s+(?:₹|Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\.?"},
+    {"name": "Generic Debit", "type": "debit", "method": "Bank Account",
+     "regex": r"(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+debited\s+from\s+.+a/c\s+(?P<account>\w*\d+)\.\s+Info:\s*(?P<vendor>.+?)\."},
+    {"name": "Credit Card Purchase", "type": "debit", "method": "Card",
+     "regex": r"Transaction\s+of\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+at\s+(?P<vendor>.+?)\s+on\s+.+Card\s+ending\s+(?P<account>\d{4})\."},
+    {"name": "UPI Debit", "type": "debit", "method": "UPI",
+     "regex": r"Paid\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+to\s+(?P<vendor>.+?)\s+from\s+.+a/c\s+via\s+UPI"},
+    {"name": "UPI Credit", "type": "credit", "method": "UPI",
+     "regex": r"Received\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+from\s+(?P<vendor>.+?)\s+in\s+.+a/c\s+via\s+UPI"},
+    {"name": "Generic Credit", "type": "credit", "method": "Bank Account",
+     "regex": r"(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+credited\s+to\s+a/c\s+(?P<account>\w*\d+)\.\s+.+from\s+(?P<vendor>.+?)\."},
+]
 
-    Returns:
-        A dictionary containing the cleaned data, or None if the format is invalid.
-    """
-    parts = [p.strip() for p in raw_data_string.split(',', 4)]
-    if len(parts) < 4:
-        return None  # Invalid format
 
-    raw_id, raw_timestamp, application, raw_message = None, None, None, None
-    raw_sender = None
+# --- 3. PARSING & TRANSFORMATION FUNCTIONS ---
+def parse_message_details(message):
+    for pattern in TRANSACTION_PATTERNS:
+        match = re.search(pattern["regex"], message, re.IGNORECASE)
+        if match:
+            data = match.groupdict()
+            return {
+                "amount": float(data.get("amount", "0").replace(",", "")),
+                "vendor": data.get("vendor", "Unknown").strip(),
+                "payment_type": "income" if pattern["type"] == "credit" else "expense",
+                "payment_method": pattern.get("method", "Unknown")
+            }
+    return None
 
-    if len(parts) == 5:
-        raw_id, raw_timestamp, application, raw_sender, raw_message = parts
-    else:
-        raw_id, raw_timestamp, application, raw_message = parts
 
-    # 1. Parse timestamp
+def format_transaction_data(raw_data_string):
+    # <<< CHANGE HERE: New logic to parse the string with UserID at the start
+    parts = [p.strip() for p in raw_data_string.split(',', 5)]
+    if len(parts) < 6:  # Now requires 6 parts: UserID, ID, Timestamp, App, Sender, Message
+        return None, None  # Invalid format
+
+    user_id, raw_id, raw_timestamp, application, raw_sender, raw_message = parts
+
     try:
-        # Assuming timestamp is in a recognizable format, e.g., ISO 8601
         dt_object = datetime.fromisoformat(raw_timestamp)
-        timestamp = {
-            "year": dt_object.year,
-            "month": dt_object.month,
-            "day": dt_object.day,
-            "hour": dt_object.hour,
-        }
     except ValueError:
-        # Handle other potential timestamp formats or errors
-        timestamp = {"year": None, "month": None, "day": None, "hour": None}
+        return None, None  # Invalid timestamp format
 
-    # 2. Extract sender
-    sender = raw_sender if raw_sender else "Unknown"
+    details = parse_message_details(raw_message)
+    if not details:
+        return None, None  # Message is not a recognized transaction
 
-    # 3. Parse the message for payment details
-    payment_method = "Unknown"
-    payment_type = "Unknown"
-    amount = None
-    category = None  # Optional
-    message = raw_message  # Optional
-
-    # Simple regex to find amount (assuming format like $123.45 or 123.45)
-    amount_match = re.search(r'(\d+\.?\d*)', raw_message)
-    if amount_match:
-        amount = float(amount_match.group(1))
-
-    # Determine payment method
-    if "credit" in raw_message.lower():
-        payment_method = "credit"
-    elif "upi" in raw_message.lower():
-        payment_method = "UPI"
-
-    # Determine payment type
-    if "incoming" in raw_message.lower() or "received" in raw_message.lower():
-        payment_type = "incoming"
-    elif "outgoing" in raw_message.lower() or "sent" in raw_message.lower():
-        payment_type = "outgoing"
-
-    cleaned_data = {
-        "ID": raw_id,
-        "timestamp": timestamp,
-        "sender": sender,
-        "payment_method": payment_method,
-        "payment_type": payment_type,
-        "amount": amount,
-        "category": category,
-        "message": message,
+    formatted_data = {
+        "year": dt_object.year,
+        "month": dt_object.month,
+        "date": dt_object.day,
+        "day": dt_object.strftime("%A"),
+        "amount": details["amount"],
+        "sender_name": details["vendor"],
+        "payment_method": details["payment_method"],
+        "payment_type": details["payment_type"],
+        "category": "Uncategorized",
+        "message": raw_message,
+        "source_app": application
     }
+    return formatted_data, user_id
 
-    return cleaned_data
+
+# --- 4. DATABASE FUNCTION ---
+def add_transaction_to_db(formatted_transaction, user_id):
+    if not db:
+        print("Firestore not initialized. Cannot save data.")
+        return False
+    try:
+        payment_type = formatted_transaction.get("payment_type")
+
+        if payment_type == 'income':
+            collection_name = 'Income'
+        elif payment_type == 'expense':
+            collection_name = 'Expense tracker'
+        else:
+            print(f"⚠️ Unknown payment type '{payment_type}'. Not saving to DB.")
+            return False
+
+        user_doc_ref = db.collection(collection_name).document(user_id)
+        user_doc_ref.collection('transactions').add(formatted_transaction)
+
+        print(f"✅ Successfully wrote transaction for UserID '{user_id}' in '{collection_name}'.")
+        return True
+    except Exception as e:
+        print(f"❌ Error writing to Firestore: {e}")
+        return False
+
+
+# --- 5. FLASK APPLICATION ---
+app = Flask(__name__)
+
+
+@app.route('/parse', methods=['POST'])
+def parse_endpoint():
+    data = request.get_json()
+    # <<< CHANGE HERE: Simplified request validation
+    if not data or 'raw_string' not in data:
+        return jsonify({"error": "Missing 'raw_string' in request body"}), 400
+
+    raw_string = data['raw_string']
+
+    # Transform the raw data, which now returns the UserID as well
+    formatted_data, user_id = format_transaction_data(raw_string)
+
+    if not formatted_data:
+        return jsonify({"error": "Failed to parse transaction from raw_string"}), 400
+
+    # Save the formatted data to the database
+    db_success = add_transaction_to_db(formatted_data, user_id)
+    if not db_success:
+        return jsonify({"error": "Data parsed but failed to save to database"}), 500
+
+    return jsonify(formatted_data)
 
 
 if __name__ == '__main__':
-    # Example Usage
-    raw_data_1 = "1, 2025-10-09T14:30:00, MyApp, John Doe, incoming credit payment of 50.00 for groceries"
-    raw_data_2 = "2, 2025-10-09T15:00:00, YourApp, , outgoing upi payment of 25.50"
-    raw_data_3 = "3, 2025-10-09T16:00:00, AnotherApp, Jane Smith, sent 100.00 via upi"
-
-    cleaned_1 = clean_raw_data(raw_data_1)
-    cleaned_2 = clean_raw_data(raw_data_2)
-    cleaned_3 = clean_raw_data(raw_data_3)
-
-    import json
-    print(json.dumps(cleaned_1, indent=2))
-    print(json.dumps(cleaned_2, indent=2))
-    print(json.dumps(cleaned_3, indent=2))
+    app.run(debug=True, port=5000)
