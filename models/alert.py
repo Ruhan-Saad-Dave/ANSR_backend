@@ -1,5 +1,5 @@
 from pydantic import BaseModel 
 
 class Alert(BaseModel):
-    id: int 
+    id: str
     limit: int

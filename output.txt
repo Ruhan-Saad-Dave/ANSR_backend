@@ -1,16 +1,3 @@
 {
-  "detail": [
-    {
-      "type": "json_invalid",
-      "loc": [
-        "body",
-        10
-      ],
-      "msg": "JSON decode error",
-      "input": {},
-      "ctx": {
-        "error": "Expecting value"
-      }
-    }
-  ]
+  "detail": "An unexpected error occurred: 'function' object has no attribute 'to_dict'"
 }
