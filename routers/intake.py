@@ -3,7 +3,6 @@ from models.intake import TransactionData
 
 # Import the main formatting function and the DB instance
 from services.parsing_engine import format_transaction_data
-from core.setup import initialize_firebase
 
 from core.setup import db
 router = APIRouter()
