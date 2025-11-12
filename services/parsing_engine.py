@@ -1,9 +1,12 @@
 import re
+
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+# Note: Removed 'supabase: Client' import. This file no longer knows about the DB.
 
-# --- 1. REGEX PATTERNS ---
+
+# --- 1. REGEX PATTERNS (Unchanged) ---
 TRANSACTION_PATTERNS = [
     {"name": "P2P UPI Credit", "type": "credit", "method": "UPI",
      "regex": r"(?P<vendor>.+?)\s+paid you\s+(?:₹|Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\.?"},
@@ -15,8 +18,8 @@ TRANSACTION_PATTERNS = [
      "regex": r"Paid\s+(?:Rs\.?|INR)\s*(?P<amount>[\d,]+\.?\d{1,2})\s+to\s+(?P<vendor>.+?)\s+from\s+.+a/c\s+via\s+UPI"},
 ]
 
- 
-# --- 2. REGEX PARSER ---
+
+# --- 2. REGEX PARSER (Unchanged) ---
 def parse_with_regex(message: str):
     """
     Parses a message using a list of predefined regex patterns.
@@ -35,7 +38,7 @@ def parse_with_regex(message: str):
     return None
 
 
-# --- 3. LLM PARSER ---
+# --- 3. LLM PARSER (Unchanged) ---
 class TransactionDetails(BaseModel):
     amount: float = Field(description="The numeric amount of the transaction.")
     sender_name: str = Field(description="The name of the person or vendor involved.")
@@ -62,11 +65,12 @@ def parse_with_llm(message: str):
         return None
 
 
-# --- 4. HYBRID PARSER CONTROLLER ---
+# --- 4. HYBRID PARSER CONTROLLER (Unchanged) ---
 def parse_transaction(message: str):
     """
     Parses a transaction message using a hybrid approach.
     First, it tries with regex. If that fails, it falls back to an LLM.
+    This function returns a dictionary (JSON) or None.
     """
     print("--- Attempting to parse with Regex... ---")
     result = parse_with_regex(message)
@@ -81,34 +85,3 @@ def parse_transaction(message: str):
         print("--- LLM parsing successful. ---")
     return result
 
-
-# --- 5. MAIN DATA FORMATTING FUNCTION ---
-def format_transaction_data(timestamp_str: str, app_name: str, raw_message: str):
-    """
-    Takes raw transaction data, parses it, and formats it into a structured dictionary.
-    """
-    try:
-        dt_object = datetime.fromisoformat(timestamp_str)
-    except (ValueError, TypeError):
-        print(f"Invalid timestamp format: {timestamp_str}")
-        return None
-
-    details = parse_transaction(raw_message)
-    if not details:
-        return None
-
-    # Assemble the final, flat dictionary
-    final_data = {
-        "year": dt_object.year,
-        "month": dt_object.month,
-        "date": dt_object.day,
-        "day": dt_object.strftime("%A"),
-        "amount": details.get("amount"),
-        "sender_name": details.get("sender_name"),
-        "payment_method": details.get("payment_method"),
-        "payment_type": details.get("payment_type"),
-        "category": details.get("category"),
-        "message": details.get("message"),
-        "source_app": app_name
-    }
-    return final_data

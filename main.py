@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from core.setup import initialize_firebase
-from routers import alert, prediction, intake, recurring, chatbot, visualization
+from routers import alert, prediction, intake, recurring, chatbot
 
 db = initialize_firebase()
 # The db object is imported from core.setup where it is initialized.
@@ -24,7 +24,7 @@ app.include_router(prediction.router, prefix="/prediction")
 app.include_router(intake.router, prefix="/intake")
 app.include_router(recurring.router, prefix="/recurring")
 app.include_router(chatbot.router, prefix="/chatbot")
-app.include_router(visualization.router, prefix="/visualization")
+
  
 @app.get("/")
 async def root():

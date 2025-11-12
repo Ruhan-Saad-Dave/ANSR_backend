@@ -1,19 +1,11 @@
 from flask import Flask, request, jsonify
-from firebase_admin import credentials, firestore
-import firebase_admin
-from datetime import datetime
+from core.setup import initialize_firebase  # Using your custom initializer
 
-# --- 1. FIREBASE INITIALIZATION ---
-# This service needs its own connection to Firebase.
-# Make sure your 'serviceAccountKey.json' file is in the same directory.
-try:
-    # IMPORTANT: Replace with your actual service account key filename
-    cred = credentials.Certificate("ansr-7f506-firebase-adminsdk-fbsvc-052e7ed895.json")
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    print(f"Firebase initialization failed: {e}\nPlease ensure your service account key file is present and valid.")
-    db = None
+# Note: datetime is no longer needed as Supabase handles timestamps
+
+# --- 1. SUPABASE INITIALIZATION ---
+# Initialize the Supabase client using your custom function
+db = initialize_firebase()
 
 # --- 2. FLASK APPLICATION ---
 app = Flask(__name__)
@@ -28,7 +20,7 @@ def add_pending_item():
     Expects JSON: {"UserID", "description", "amount", "type", "person_name"}
     'type' should be 'payable' (you owe) or 'receivable' (you are owed).
     """
-    if not db: return jsonify({"error": "Firestore not initialized"}), 500
+    if not db: return jsonify({"error": "Supabase not initialized"}), 500
 
     data = request.get_json()
     required_fields = ["UserID", "description", "amount", "type", "person_name"]
@@ -37,19 +29,31 @@ def add_pending_item():
 
     user_id = data["UserID"]
 
-    new_item = {
-        "description": data["description"],
-        "amount": float(data["amount"]),
-        "type": data["type"],
-        "person_name": data["person_name"],
-        "created_at": firestore.SERVER_TIMESTAMP
-    }
+    # --- Map incoming JSON to your Supabase schema ---
+    try:
+        new_item = {
+            "user_id": user_id,
+            "reason": data["description"],
+            "amount": float(data["amount"]),
+            # Map 'type' to the 'to_give' boolean
+            "to_give": True if data["type"] == 'payable' else False,
+            "other_user": data["person_name"]
+            # 'created_at' and 'pending_id' are handled automatically by Supabase
+        }
+    except ValueError:
+        return jsonify({"error": "Invalid amount. Must be a number."}), 400
 
     try:
-        update_time, doc_ref = db.collection('Pending').document(user_id).collection('pending_items').add(new_item)
+        # Insert the new record into the 'pending' table
+        response = db.table('pending').insert(new_item).execute()
 
-        # Replace the server timestamp with a string for the JSON response to avoid serialization error
-        return jsonify({"status": "success", "id": doc_ref.id}), 201
+        if not response.data:
+            raise Exception("Failed to insert data or no data returned.")
+
+        # Get the new ID from the returned data
+        new_id = response.data[0]['pending_id']
+
+        return jsonify({"status": "success", "id": new_id}), 201
     except Exception as e:
         return jsonify({"error": f"Failed to add pending item: {e}"}), 500
 
@@ -59,16 +63,24 @@ def get_pending_items(user_id):
     """
     Retrieves all pending items for a given UserID.
     """
-    if not db: return jsonify({"error": "Firestore not initialized"}), 500
+    if not db: return jsonify({"error": "Supabase not initialized"}), 500
 
     try:
-        items_ref = db.collection('Pending').document(user_id).collection('pending_items').stream()
+        # Select all items from 'pending' table for the user
+        response = db.table('pending').select('*').eq('user_id', user_id).execute()
 
         pending_list = []
-        for item in items_ref:
-            item_data = item.to_dict()
-            item_data['id'] = item.id
-            pending_list.append(item_data)
+
+        # --- Map Supabase columns back to original JSON format ---
+        for item in response.data:
+            pending_list.append({
+                "id": item['pending_id'],
+                "description": item['reason'],
+                "amount": item['amount'],
+                "person_name": item['other_user'],
+                "type": 'payable' if item['to_give'] else 'receivable',
+                "created_at": item['created_at']
+            })
 
         return jsonify(pending_list)
     except Exception as e:
@@ -80,10 +92,15 @@ def delete_pending_item(user_id, item_id):
     """
     Deletes a specific pending item by its ID.
     """
-    if not db: return jsonify({"error": "Firestore not initialized"}), 500
+    if not db: return jsonify({"error": "Supabase not initialized"}), 500
 
     try:
-        db.collection('Pending').document(user_id).collection('pending_items').document(item_id).delete()
+        # Delete from 'pending' table where user_id and pending_id match
+        db.table('pending').delete() \
+            .eq('user_id', user_id) \
+            .eq('pending_id', item_id) \
+            .execute()
+
         return jsonify({"success": True, "message": f"Item {item_id} deleted successfully."})
     except Exception as e:
         return jsonify({"error": f"Failed to delete item: {e}"}), 500
@@ -91,5 +108,5 @@ def delete_pending_item(user_id, item_id):
 
 # --- 4. MAIN EXECUTION BLOCK ---
 if __name__ == '__main__':
-    # Running on port 5001 to avoid conflicts with your main parsing app (on port 5000)
-    app.run(debug=True)
+    # Running on port 5001 (as in your original file)
+    app.run(debug=True, port=5001)

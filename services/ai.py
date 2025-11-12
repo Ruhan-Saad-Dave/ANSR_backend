@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 import os
-import firebase_admin
-from firebase_admin import credentials, firestore
+from supabase import create_client, Client  # Replaced Firebase
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import Tool
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,15 +12,18 @@ from datetime import datetime
 # --- CONFIGURATION & SETUP ---
 load_dotenv()
 
-# 1a. Firebase Initialization
+# 1a. Supabase Initialization (Replaced Firebase)
 try:
-    # IMPORTANT: Replace with your actual service account key filename
-    cred = credentials.Certificate("ansr-7f506-firebase-adminsdk-fbsvc-052e7ed895.json")
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("--- Firebase Initialized Successfully ---")
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        raise ValueError("SUPABASE_URL or SUPABASE_KEY environment variables not set.")
+
+    # Use 'db' as variable name to minimize changes
+    db: Client = create_client(supabase_url, supabase_key)
+    print("--- Supabase Initialized Successfully ---")
 except Exception as e:
-    print(f"Firebase initialization failed: {e}\nPlease ensure your service account key file is present and valid.")
+    print(f"Supabase initialization failed: {e}\nPlease ensure your .env file is present and valid.")
     db = None
 
 # 1b. LangChain (Gemini) Initialization
@@ -38,26 +40,32 @@ agent_initialized = False
 
 def get_financial_data(user_id: str) -> str:
     """
-    Fetches the latest income and expense transactions for a specific user_id from Firestore
+    Fetches the latest income and expense transactions for a specific user_id from Supabase
     and returns them as a formatted string for the AI to analyze.
     """
     if not db:
-        return "Error: Firestore is not connected."
+        return "Error: Supabase is not connected."
 
     print(f"--- TOOL: Fetching financial data for UserID: {user_id} ---")
 
     try:
         # Fetch latest 25 income transactions
-        income_ref = db.collection('Income').document(user_id).collection('transactions').order_by('timestamp',
-                                                                                                   direction=firestore.Query.DESCENDING).limit(
-            25).stream()
-        income_list = [doc.to_dict() for doc in income_ref]
+        # *** ASSUMPTION: 'payment_type' is 'income' for income ***
+        income_res = db.table('transaction').select('*') \
+            .eq('user_id', user_id) \
+            .eq('payment_type', 'income') \
+            .order('created_at', desc=True) \
+            .limit(25).execute()
+        income_list = income_res.data
 
         # Fetch latest 25 expense transactions
-        expenses_ref = db.collection('Expenses').document(user_id).collection('transactions').order_by('timestamp',
-                                                                                                       direction=firestore.Query.DESCENDING).limit(
-            25).stream()
-        expenses_list = [doc.to_dict() for doc in expenses_ref]
+        # *** ASSUMPTION: 'payment_type' is 'expense' for expenses ***
+        expenses_res = db.table('transaction').select('*') \
+            .eq('user_id', user_id) \
+            .eq('payment_type', 'expense') \
+            .order('created_at', desc=True) \
+            .limit(25).execute()
+        expenses_list = expenses_res.data
 
         if not income_list and not expenses_list:
             return "No transaction data found for this user."
@@ -68,19 +76,19 @@ def get_financial_data(user_id: str) -> str:
         if income_list:
             response_str += "\n--- Recent Income ---\n"
             for item in income_list:
-                details = item.get('details', {})
-                response_str += f"- Amount: {details.get('amount')}, From: {details.get('vendor')}, Date: {item.get('timestamp')}\n"
+                # Using 'sender_name' and 'created_at' from your schema
+                response_str += f"- Amount: {item.get('amount')}, From: {item.get('sender_name')}, Date: {item.get('created_at')}\n"
 
         if expenses_list:
             response_str += "\n--- Recent Expenses ---\n"
             for item in expenses_list:
-                details = item.get('details', {})
-                response_str += f"- Amount: {details.get('amount')}, To: {details.get('vendor')}, Date: {item.get('timestamp')}\n"
+                # Using 'sender_name' and 'created_at' from your schema
+                response_str += f"- Amount: {item.get('amount')}, To: {item.get('sender_name')}, Date: {item.get('created_at')}\n"
 
         return response_str
 
     except Exception as e:
-        print(f"Error fetching data from Firestore: {e}")
+        print(f"Error fetching data from Supabase: {e}")
         return f"An error occurred while fetching financial data: {e}"
 
 
@@ -105,7 +113,7 @@ def initialize_agent():
         name="financial_data_retriever",
         func=get_financial_data,
         description="""
-        Use this tool to search the user's financial records in Firestore to answer questions about their income, expenses, and spending patterns.
+        Use this tool to search the user's financial records in Supabase to answer questions about their income, expenses, and spending patterns.
         This tool requires the 'user_id' as an argument.
         """
     )
@@ -134,11 +142,13 @@ def initialize_agent():
 # --- CHAT HISTORY MANAGEMENT ---
 
 def get_chat_history(user_id: str):
+    """Fetches chat history from the 'chat_history' table in Supabase."""
     if not db: return []
     try:
-        doc_ref = db.collection("Chat history").document(user_id).get()
-        if doc_ref.exists:
-            return doc_ref.to_dict().get('history', [])
+        response = db.table("chat_history").select("chat_history").eq("user_id", user_id).execute()
+        if response.data:
+            # Your schema has 'chat_history' as the json column
+            return response.data[0].get('chat_history', [])
         return []
     except Exception as e:
         print(f"Error getting chat history: {e}")
@@ -146,17 +156,18 @@ def get_chat_history(user_id: str):
 
 
 def update_chat_history(user_id: str, query: str, response: str):
+    """Updates chat history in the 'chat_history' table in Supabase."""
     if not db: return
     try:
-        doc_ref = db.collection("Chat history").document(user_id)
         history = get_chat_history(user_id)
-
         history.append({"human": query, "ai": response})
+        history = history[-20:]  # Keep last 20 messages
 
-        # Keep only the last 20 messages (10 pairs of human/ai)
-        history = history[-20:]
-
-        doc_ref.set({"history": history}, merge=True)
+        # Use upsert to create or update the record
+        db.table("chat_history").upsert({
+            "user_id": user_id,
+            "chat_history": history
+        }).execute()
     except Exception as e:
         print(f"Error updating chat history: {e}")
 
