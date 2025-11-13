@@ -3,10 +3,10 @@ import json
 from fastapi import APIRouter 
 
 from models.alert import Alert
-from core.setup import initialize_firebase
+from core.setup import initialize_supabase
 
 alert_router = APIRouter()
-DB = initialize_firebase()
+DB = initialize_supabase()
 
 @alert_router.post("/set_daily_alert", tags = ["alert"])
 async def set_daily_alert(alert: Alert):
