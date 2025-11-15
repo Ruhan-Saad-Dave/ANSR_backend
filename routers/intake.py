@@ -20,7 +20,7 @@ except Exception as e:
 
 # --- Define the Pydantic model (as referenced in your code) ---
 class TransactionData(BaseModel):
-    user_id: int
+    user_id: str
     timestamp: str  # e.g., "2025-11-13T14:30:00+05:30"
     raw_message: str
     # application_name: str # Add back if needed
