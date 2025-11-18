@@ -43,14 +43,14 @@ chat_history table:
 #each user id only 1 row, but json message can be big. try to keep limit of 20 chat messages 
 
 summary table:
-- day_out (float) [total spending of the day]
-- week_out (float) 
-- month_out (float)
-- year_out (float)
-- day_in (float) [total income of the day]
-- week_in (float) 
-- month_in (float)
-- year_in (float)
+- day_expense (float) [total spending of the day]
+- week_expense (float) 
+- month_expense (float)
+- year_expense (float)
+- day_income (float) [total income of the day]
+- week_income (float) 
+- month_income (float)
+- year_income (float)
 - day_cashflow (float) [cashflow of the day]
 - week_cashflow (float) 
 - month_cashflow (float)

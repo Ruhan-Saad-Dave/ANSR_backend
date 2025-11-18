@@ -8,10 +8,12 @@ key: str = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
 response = (
-    supabase.table("chat_history")
-    .select("*")
+    supabase.table("pending")
+    .select("amount", "other_user", "to_return")
     .eq("user_id", 1)
     .execute()
 )
 if(len(response.data) > 0):
     print(response.data)
+else:
+    print("No data found.")

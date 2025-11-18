@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from services import chatbot as chatbot_service
+from services.chatbot import chat  # 1. Corrected import path
 
 router = APIRouter()
 
@@ -9,9 +9,14 @@ class ChatRequest(BaseModel):
     message: str
 
 @router.post("/chat")
-def chat(request: ChatRequest):
+async def chabot(request: ChatRequest):  # 5. Changed to async for better performance
     try:
-        response = chatbot_service.get_chatbot_response(request.user_id, request.message)
-        return {"response": response}
+        # 2. Fixed argument name from 'message' to 'query'
+        response = chat.handle_chat(user_id=request.user_id, query=request.message)
+        # 3. Return the response from handle_chat directly
+        return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # 4. Improved error handling to not leak details
+        print(f"An error occurred in /chat endpoint: {e}") # Log error for debugging
+        raise HTTPException(status_code=500, detail="An internal server error occurred.")
+

@@ -1,74 +1,139 @@
-import os 
-from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.tools import Tool
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from core.setup import initialize_supabase
+from .tools import get_summary, get_limit, get_pending, get_transactions
 
-# 1. Initialization
-load_dotenv()
 db = initialize_supabase()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
 
-def get_chatbot_response(user_id: str, message: str):
+# 2. Create Tools
+summary_tool = Tool(
+    name="Summary_Retriever",
+    func=get_summary,
+    description="""
+    Use this tool to get the summary of the user's financial data from supabase.
+    It includes income, expense and cashflow per day, week, month and year.
+    This tool requires the 'user_id' as an argument.
     """
-    Handles the chatbot conversation logic using Supabase for chat history.
+)
+
+limit_tool = Tool(
+    name="Spending_Limit_Retriever",
+    func=get_limit,
+    description="""
+    Use this tool to get the Spending Limit set by the user from supabase.
+    It includes spending limit of daily, weekly, monthly and yearly.
+    This tool requires the 'user_id' as an argument.
     """
-    if not db:
-        return "Error: Supabase client is not initialized. Please check credentials."
+)
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=GEMINI_API_KEY)
+pending_tool = Tool(
+    name="Pending_Transactions_Retriever",
+    func=get_pending,
+    description="""
+    Use this tool to get the Pending Transactions of the user from supabase.
+    It includes the list of pending transactions with other users and the amounts owed or to be received.
+    A positive value means the other user owes money, negative for current user owes money.
+    This tool requires the 'user_id' as an argument.
+    """
+)
 
-    # 2. Fetch Chat History from Supabase
+transaction_tool = Tool(
+    name="Transaction_Retriever",
+    func=get_transactions,
+    description="""
+    Use this tool to find and retrieve a user's transactions to answer detailed questions about their spending or income.
+    It supports filtering by 'start_date' (YYYY-MM-DD), 'end_date' (YYYY-MM-DD), 'category', and 'payment_type' ('income' or 'expense').
+    If no dates are given, it defaults to the last 30 days.
+    Always provide the 'user_id'.
+    This is the primary tool for any question involving specific transaction details, amounts, categories, or dates.
+    """
+)
+
+tools = [summary_tool, limit_tool, pending_tool, transaction_tool]
+
+# 3. Create Prompt
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system",
+         "You are a friendly and helpful AI Financial Assistant. Your primary goal is to answer questions about the user's finances. "
+         "To answer, you must use the tools provided to retrieve the necessary financial data. The user's ID is provided with each request. "
+         "The available tools are: "
+         "- 'Summary_Retriever': For overall financial summaries (income, expense, cashflow). "
+         "- 'Spending_Limit_Retriever': For user-defined spending limits. "
+         "- 'Pending_Transactions_Retriever': For pending transactions with other users. "
+         "- 'Transaction_Retriever': For finding specific transactions by date, category, or type (income/expense). Use this for all detailed questions about spending history. "
+         "Do NOT answer questions about their personal finances from your own general knowledge. If a tool returns no data, inform the user that you couldn't find the requested information."),
+        ("placeholder", "{chat_history}"),
+        ("human", "{input}\n\nUser ID: {user_id}"),  # Pass user_id directly in the prompt
+        ("placeholder", "{agent_scratchpad}"),
+    ]
+)
+
+
+
+# 4. Create and Assign Agent Executor
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+
+########
+
+def get_chat_history(user_id: str):
+    """Fetches chat history from the 'chat_history' table in Supabase."""
+    if not db: 
+        return []
     try:
-        response = db.table("chat_history").select("chat_message").eq("user_id", user_id).execute()
+        response = db.table("chat_history").select("chat_history").eq("user_id", user_id).execute()
         if response.data:
-            messages_dict = response.data[0].get("chat_history", [])
-        else:
-            messages_dict = []
+            # Your schema has 'chat_history' as the json column
+            return response.data[0].get('chat_history', [])
+        return []
     except Exception as e:
-        return {"message" : f"Error fetching chat history from Supabase: {e}"}
-        
+        print(f"Error getting chat history: {e}")
+        return []
 
-    # Convert list of dicts to LangChain message objects
-    messages = []
-    for msg in messages_dict:
-        if msg['role'] == 'user':
-            messages.append(HumanMessage(content=msg['content']))
-        elif msg['role'] == 'assistant':
-            messages.append(AIMessage(content=msg['content']))
 
-    # 3. Core LangChain Logic (Unchanged)
-
-    # Add the new user message to the history
-    messages.append(HumanMessage(content=message))
-
-    # Construct the prompt for Gemini
-    prompt = [
-        SystemMessage(content="""You are FinSight, a friendly and intelligent financial assistant. Your purpose is to help users understand their spending and make smarter financial decisions. You can answer questions about the user's transactions, subscriptions, budgets, and spending patterns. You can also provide insights and predictions based on their financial activity.""")
-    ] + messages
-
-    # Get the response from Gemini
+def update_chat_history(user_id: str, query: str, response: str):
+    """Updates chat history in the 'chat_history' table in Supabase."""
+    if not db: return
     try:
-        response = llm.generate_responses(prompt)
-        bot_message = response.generations[0][0].text  
-    except Exception as e:
-        print(f"Error generating response from Gemini: {e}")
-        bot_message = "I'm sorry, but I'm currently unable to process your request."
-    # Add the bot's response to the history
-    messages.append(AIMessage(content=bot_message))
-    if len(messages) > 10:
-        messages = messages[-10:]  # Keep only the last 10 messages
+        history = get_chat_history(user_id)
+        history.append({"human": query, "ai": response})
+        history = history[-10:]  # Keep last 10 messages
 
-    # 4. Update Chat History in Supabase
-    messages_to_store = [{"role": "user" if isinstance(msg, HumanMessage) else "assistant", "content": msg.content} for msg in messages]   
-    try:    
+        # Use upsert to create or update the record
         db.table("chat_history").upsert({
             "user_id": user_id,
-            "chat_history": messages_to_store
+            "chat_history": history
         }).execute()
     except Exception as e:
-        return {"message" : f"Error updating chat history in Supabase: {e}"}
-    return bot_message
+        print(f"Error updating chat history: {e}")
 
+
+def handle_chat(user_id: str, query: str):
+    """
+    Main endpoint to handle user queries for the financial chatbot.
+    Expects JSON: {"UserID", "query"}
+    """
+    raw_history = get_chat_history(user_id)
+    chat_history = []
+    for record in raw_history:
+        if record.get("human"): chat_history.append(HumanMessage(content=record["human"]))
+        if record.get("ai"): chat_history.append(AIMessage(content=record["ai"]))
+
+    try:
+        # Invoke the agent, passing the user_id for the tool to use
+        response = agent_executor.invoke({"input": query, "chat_history": chat_history, "user_id": user_id})
+        ai_response = response["output"]
+
+        update_chat_history(user_id, query, ai_response)
+
+        return {"response": ai_response}
+    except Exception as e:
+        return {"error": f"An error occurred during agent execution: {e}"}
