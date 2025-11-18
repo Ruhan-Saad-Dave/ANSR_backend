@@ -7,9 +7,9 @@ from services.parsing_engine import parse_transaction
 
 # Import the Supabase DB client
 try:
-    from core.setup import initialize_firebase
+    from core.setup import initialize_supabase
 
-    db = initialize_firebase()
+    db = initialize_supabase()
 except ImportError:
     print("Error: Could not import 'initialize_firebase' from 'core.setup'.")
     db = None
