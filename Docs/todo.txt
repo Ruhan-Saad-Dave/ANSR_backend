@@ -1,0 +1,7 @@
+create a complete pipeline for 
+- data intake
+- prediction (ad or payment)
+- category assignment
+- NLP for extracting info.
+
+need to have an easy way to test the code. (accuracy and response)

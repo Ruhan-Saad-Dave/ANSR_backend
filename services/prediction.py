@@ -85,7 +85,7 @@ def get_cashflow_prediction(user_id: str, timeframe: str):
     Predicts future cashflow based on historical data from Supabase.
     """
     try:
-        db = initialize_firebase()
+        db = initialize_supabase()
         if not db:
             raise Exception("Supabase client not initialized")
 
@@ -150,7 +150,7 @@ def get_daily_spending_trend(user_id: str):
     Gets the daily spending trend for the last 7 days from Supabase.
     """
     try:
-        db = initialize_firebase()
+        db = initialize_supabase()
         if not db:
             raise Exception("Supabase client not initialized")
 
@@ -188,7 +188,7 @@ def get_monthly_spending_trend(user_id: str):
     Gets the monthly spending trend for the last 12 months from Supabase.
     """
     try:
-        db = initialize_firebase()
+        db = initialize_supabase()
         if not db:
             raise Exception("Supabase client not initialized")
 

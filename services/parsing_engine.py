@@ -52,7 +52,7 @@ def parse_with_llm(message: str):
     Parses a message using a structured output LLM.
     """
     # Assuming the Google API key is set in the environment variables
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(TransactionDetails)
     prompt = f"Analyze the following financial transaction message and extract the details. Message: \"{message}\""
     try:

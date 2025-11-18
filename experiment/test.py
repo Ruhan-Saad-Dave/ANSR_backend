@@ -8,9 +8,9 @@ key: str = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
 response = (
-    supabase.table("limit")
+    supabase.table("chat_history")
     .select("*")
-    .eq("user_id", 2)
+    .eq("user_id", 1)
     .execute()
 )
 if(len(response.data) > 0):
