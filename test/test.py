@@ -2,7 +2,7 @@ import time
 import datetime
 import requests 
 
-user_id = "test_user_1"
+user_id = "test_user_1" # Change it as needed
 base = "http://localhost:8000/"
 
 def transaction():

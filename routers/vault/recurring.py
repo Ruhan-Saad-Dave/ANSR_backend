@@ -4,7 +4,7 @@ Will need to be looked after.
 """
 
 from fastapi import APIRouter, HTTPException
-from services.recurring_detector import detect_recurring
+from services.vault.recurring_detector import detect_recurring
 
 router = APIRouter(tags=["Recurring Payments"])
 

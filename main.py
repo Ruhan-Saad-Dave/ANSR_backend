@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from core.setup import initialize_supabase
-from routers import limit, prediction, intake, recurring, chatbot, test, supa
+from routers import limit, intake, chatbot, test, supa
+from routers.vault import prediction, recurring
 
 db = initialize_supabase()
 # The db object is imported from core.setup where it is initialized.

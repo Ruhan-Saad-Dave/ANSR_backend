@@ -1,7 +1,7 @@
 # need to work on
 
 from fastapi import APIRouter, Depends, HTTPException
-from services.prediction import (
+from services.vault.prediction import (
     get_spending_prediction,
     get_cashflow_prediction,
     get_daily_spending_trend,
