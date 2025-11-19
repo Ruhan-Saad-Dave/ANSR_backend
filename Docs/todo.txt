@@ -10,5 +10,3 @@ stuff that need some work:
 - recurring payment (no idea what's that)
 
 pending payment router and service
-
-initialization of data for new users

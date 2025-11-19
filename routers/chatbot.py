@@ -5,8 +5,15 @@ from models.chat import ChatRequest
 
 router = APIRouter()
 
-@router.post("/chat", tags=["Chatbot"])
+@router.post("/chat", tags=["Decrypting Soon"])
 async def chabot(request: ChatRequest): 
+    """
+    Decrypting soon...
+    """
+    raise HTTPException(status_code=501, detail="This endpoint is deprecated. Please use /chatbot/ endpoint instead.")
+    
+@router.post("/", tags=["Chatbot"])
+async def normal_chatbot(request: ChatRequest): 
     """
     Endpoint for handling chatbot interactions. The chatbot internally can hold 10 latest chat message.
     Returns only 1 response from the AI.

@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from core.setup import initialize_supabase
-from routers import limit, intake, chatbot, test, supa
-from routers.vault import prediction, recurring
+from routers import limit, intake, chatbot, test, supa, new_user
+#from routers.vault import prediction, recurring
 
 db = initialize_supabase()
 # The db object is imported from core.setup where it is initialized.
@@ -34,12 +34,16 @@ tags_metadata = [
         "name": "supabase",
         "description": "Endpoints for Supabase database interactions.",
     },
+    {
+        "name": "New User Setup",
+        "description": "Endpoints for initializing database entries for a new user.",
+    },
 ]
 
 app = FastAPI(
     title="FinSight API",
     description="API for smart expense tracking and financial insights.",
-    version="1.1.0",
+    version="1.1.1",
     openapi_tags=tags_metadata,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -47,13 +51,14 @@ app = FastAPI(
 
 # Include all the application routers
 app.include_router(limit.router, prefix="/Spending_Limit")
-#app.include_router(prediction.router, prefix="/prediction")  #need some work
 app.include_router(intake.router, prefix="/intake")
-#app.include_router(recurring.router, prefix="/recurring") #need some work
 app.include_router(chatbot.router, prefix="/chatbot")
 app.include_router(test.router, prefix="/test")
 app.include_router(supa.router, prefix="/supabase")
+app.include_router(new_user.router, prefix="/new_user")
 
+#app.include_router(prediction.router, prefix="/prediction")  #need some work
+#app.include_router(recurring.router, prefix="/recurring") #need some work
  
 @app.get("/")
 async def root():

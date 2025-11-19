@@ -10,8 +10,8 @@ from core.setup import initialize_supabase
 router = APIRouter()
 db = initialize_supabase()
 
-@router.post("/process", tags=["Intake"])
-async def process_raw_transaction(data: TransactionData):
+@router.post("/", tags=["Intake"])
+async def intake(data: TransactionData):
     """
     Receives raw transaction data, calls the parsing service,
     and saves the formatted data to the Supabase database.
@@ -62,3 +62,10 @@ async def process_raw_transaction(data: TransactionData):
         print(f"❌ DB Write Error: {e}")
         # This will catch RLS (Row Level Security) policy violations
         raise HTTPException(status_code=500, detail=f"Data parsed but failed to save to database: {str(e)}")
+
+@router.post("/process", tags=["Decrypting Soon"])
+async def process_raw_transaction(data: TransactionData):
+    """
+    Decrypting soon...
+    """
+    raise HTTPException(status_code=501, detail="This endpoint is deprecated. Please use /intake/ endpoint instead.")

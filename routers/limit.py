@@ -28,3 +28,5 @@ def set_spending_limit(data: Limit):
         DB.table("limit").update({limit_type: limit}).eq("user_id", id).execute()
         return {"Success": f"{limit_type} alert set successfully."}
     return {"Error": "User ID does not exist"}
+
+# todo: get spending limit

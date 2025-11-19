@@ -1,9 +1,12 @@
-.env
 .venv/
+.idea/
+.vscode/
 experiment/
-gemini.md
-info.txt
 __pycache__/
-core/ansr.json
+
+.env
 output.txt
 dummy.py
+bookmark.txt
+gemini.md
+info.txt
