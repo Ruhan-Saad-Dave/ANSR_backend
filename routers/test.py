@@ -4,13 +4,7 @@ from datetime import datetime
 
 from models.chat import ChatRequest
 from models.limit import Limit
-
-# --- Define the Pydantic model (as referenced in your code) ---
-class TransactionData(BaseModel):
-    user_id: str
-    timestamp: str  # e.g., "2025-11-13T14:30:00+05:30"
-    raw_message: str
-    #application_name: str # Add back if needed
+from models.intake import TransactionData
 
 router = APIRouter()
 
@@ -25,13 +19,20 @@ async def process_raw_transaction(data: TransactionData):
 
 @router.post("/chatbot", tags = ["test"])
 async def chatbot(data: ChatRequest):
+    """
+    Receives a user message and returns a placeholder AI response.
+    """
     user_id = data.user_id
     return {"ai" : f"We got your message, {user_id}"}
 
 @router.post("/change_spending_limit", tags=["test"])
 async def alert(data: Limit):
+    """
+    Changes the spending limit of particular time type.
+    Includes daily, weekly, monthly, yearly
+    """
     limit = data.limit
-    limit_type = data.type
+    limit_type = data.limit_type
     user_id = data.id
 
     if limit_type in ["daily", "weekly", "monthly", "yearly"]:

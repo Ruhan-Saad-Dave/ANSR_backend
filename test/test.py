@@ -6,10 +6,29 @@ user_id = "test_user_1"
 base = "http://localhost:8000/"
 
 def transaction():
-    pass
+    raw_message = input("Enter the raw message:")
+    timestamp = datetime.datetime.now().isoformat()
+    data = {
+        "user_id": user_id,
+        "raw_message": raw_message,
+        "timestamp": timestamp
+    }
+    response = requests.post(base + "transactions/add", json=data)
+    print("Server response:", response.json())
 
 def spending():
-    pass
+    spending_type = input("Enter spending type (daily, weekly, monthly, yearly): ")
+    if spending_type not in ["daily", "weekly", "monthly", "yearly"]:
+        print("Invalid spending type.")
+        return
+    amount = float(input("Enter new spending limit amount: "))
+    data = {
+        "user_id": user_id,
+        "spending_type": spending_type,
+        "amount": amount
+    }
+    response = requests.post(base + "spending/set_limit", json=data)
+    print("Server response:", response.json())
 
 def chatbot():
     while True:
@@ -18,14 +37,19 @@ def chatbot():
             print("Exiting chatbot...\n\n")
             break
         response = requests.post(base + "chatbot/chat", json={"user_id": user_id, "message": msg})
+        #print(response.json())
 
-######################
+        print("AI:", response.json().get("response"))
 
 def pending():
     pass
 
 def summary():
-    pass
+    data = {
+        "user_id": user_id
+    }
+    response = requests.post(base + "/supa/read_one/summary", json=data)
+    print("Summary:", response.json())
 
 # __main__
 while True:

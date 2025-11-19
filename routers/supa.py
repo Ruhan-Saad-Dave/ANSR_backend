@@ -6,21 +6,31 @@ from core.setup import initialize_supabase
 router = APIRouter()
 DB = initialize_supabase()
 
-### transaction, limit, chat_history, pending, summary
-
 # read all
-@router.get("/read_all/{table_name}")
-async def read_all(table_name: str):
-    response = (
-        DB.table(table_name)
-        .select("*")
-        .execute()
-    )
-    return response.data
+@router.get("/read_all", tags = ["supabase"])
+async def read_all(data: ReadAll):
+    """
+    Reads all records from the specified table for a given user_id.
+    Note: Will be decrepted soon. Use read_one endpoints instead.
+    """
+    if data.table_name not in ["transaction", "limit", "chat_history", "pending", "summary"]:
+        return {"error": "Invalid table name. Should be one of 'transaction', 'limit', 'chat_history', 'pending', 'summary'."}
+    else:
+        response = (
+            DB.table(data.table_name)
+            .select("*")
+            .eq("user_id", data.user_id)
+            .execute()
+        )
+        return response.data
 
 # read one 
-@router.get("/read_one/transaction")
+@router.get("/read_one/transaction", tags = ["supabase"])
 async def read_one_transaction(transaction: TransactionReadOne):
+    """
+    Reads a particular transaction.
+    Note: Will be updated soon.
+    """
     user_id = transaction.user_id
     transaction_id = transaction.transaction_id
     if (user_id is None) and (transaction_id is None):
@@ -51,8 +61,11 @@ async def read_one_transaction(transaction: TransactionReadOne):
         )
         return response.data
     
-@router.get("/read_one/limit")
+@router.get("/read_one/limit", tags = ["supabase"])
 async def read_one_limit(limit: LimitReadOne):
+    """
+    Reads the spending limit set for a user.
+    """
     if limit.user_id is None:
         return {"ERROR": "user_id must be provided."}
     user_id = limit.user_id
@@ -64,8 +77,12 @@ async def read_one_limit(limit: LimitReadOne):
     )
     return response.data
 
-@router.get("/read_one/pending")
+@router.get("/read_one/pending", tags = ["supabase"])
 async def read_one_pending(pending: PendingReadOne):
+    """
+    Reads a particular pending transaction.
+    Note: Will be updated soon to include all pending transactions for a user.
+    """
     user_id = pending.user_id
     pending_id = pending.pending_id
     if (user_id is None) and (pending_id is None):
@@ -96,8 +113,11 @@ async def read_one_pending(pending: PendingReadOne):
         )
         return response.data
     
-@router.get("/read_one/summary")
+@router.get("/read_one/summary", tags = ["supabase"])
 async def read_one_summary(summary: SummaryReadOne):
+    """
+    Reads the expense summary of a user.
+    """
     if summary.user_id is None:
         return {"ERROR": "user_id must be provided."}
     user_id = summary.user_id
@@ -109,8 +129,11 @@ async def read_one_summary(summary: SummaryReadOne):
     )
     return response.data
 
-@router.get("/read_one/chat_history")
+@router.get("/read_one/chat_history", tags = ["supabase"])
 async def read_one_chat_history(chat_history: ChatHistoryReadOne):
+    """
+    Reads the entire chat history of a user.
+    """
     if chat_history.user_id is None:
         return {"ERROR": "user_id must be provided."}
     user_id = chat_history.user_id
@@ -122,15 +145,9 @@ async def read_one_chat_history(chat_history: ChatHistoryReadOne):
     )
     return response.data
 
+## To implement for the server to handle data modifications
+
 # insert
-
-
 # update
-
-
 #upsert
-
-
 # delete
-
-

@@ -1,19 +1,19 @@
 from fastapi import APIRouter, HTTPException
 
-from services.chatbot import chat  # 1. Corrected import path
+from services.chatbot import chat
 from models.chat import ChatRequest
 
 router = APIRouter()
 
-@router.post("/chat")
-async def chabot(request: ChatRequest):  # 5. Changed to async for better performance
+@router.post("/chat", tags=["Chatbot"])
+async def chabot(request: ChatRequest): 
+    """
+    Endpoint for handling chatbot interactions. The chatbot internally can hold 10 latest chat message.
+    Returns only 1 response from the AI.
+    """
     try:
-        # 2. Fixed argument name from 'message' to 'query'
         response = chat.handle_chat(user_id=request.user_id, query=request.message)
-        # 3. Return the response from handle_chat directly
-        return response
+        return {"ai": response}
     except Exception as e:
-        # 4. Improved error handling to not leak details
-        print(f"An error occurred in /chat endpoint: {e}") # Log error for debugging
-        raise HTTPException(status_code=500, detail="An internal server error occurred.")
-
+        print(f"An error occurred in /chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal server error occurred. {e}")

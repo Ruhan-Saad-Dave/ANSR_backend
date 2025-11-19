@@ -4,30 +4,11 @@ from datetime import datetime
 
 # Import the parsing function
 from services.parsing_engine import parse_transaction
-
-# Import the Supabase DB client
-try:
-    from core.setup import initialize_supabase
-
-    db = initialize_supabase()
-except ImportError:
-    print("Error: Could not import 'initialize_firebase' from 'core.setup'.")
-    db = None
-except Exception as e:
-    print(f"Error initializing database: {e}")
-    db = None
-
-
-# --- Define the Pydantic model (as referenced in your code) ---
-class TransactionData(BaseModel):
-    user_id: str
-    timestamp: str  # e.g., "2025-11-13T14:30:00+05:30"
-    raw_message: str
-    # application_name: str # Add back if needed
-
+from models.intake import TransactionData
+from core.setup import initialize_supabase
 
 router = APIRouter()
-
+db = initialize_supabase()
 
 @router.post("/process", tags=["Intake"])
 async def process_raw_transaction(data: TransactionData):
@@ -81,8 +62,3 @@ async def process_raw_transaction(data: TransactionData):
         print(f"❌ DB Write Error: {e}")
         # This will catch RLS (Row Level Security) policy violations
         raise HTTPException(status_code=500, detail=f"Data parsed but failed to save to database: {str(e)}")
-
-
-@router.get("/test", tags=["Intake"])
-async def test_endpoint():
-    return {"message": "Intake endpoint is working"}

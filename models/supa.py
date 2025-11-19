@@ -17,3 +17,7 @@ class SummaryReadOne(BaseModel):
 
 class ChatHistoryReadOne(BaseModel):
     user_id: Optional[str] = None
+
+class ReadAll(BaseModel):
+    user_id: str
+    table_name: str

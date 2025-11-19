@@ -15,3 +15,9 @@ stuff that need some work:
 - recurring payment (no idea what's that)
 
 fix the api tags called "DEfault"
+
+pending payment router and service
+
+initialization of data for new users
+
+add documentation at each end point for description
