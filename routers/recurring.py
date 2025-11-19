@@ -1,3 +1,8 @@
+"""
+This code is suppose to detect regular payments like subscription.
+Will need to be looked after.
+"""
+
 from fastapi import APIRouter, HTTPException
 from services.recurring_detector import detect_recurring
 

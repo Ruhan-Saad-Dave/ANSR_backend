@@ -1,12 +1,9 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+
 from services.chatbot import chat  # 1. Corrected import path
+from models.chat import ChatRequest
 
 router = APIRouter()
-
-class ChatRequest(BaseModel):
-    user_id: str
-    message: str
 
 @router.post("/chat")
 async def chabot(request: ChatRequest):  # 5. Changed to async for better performance

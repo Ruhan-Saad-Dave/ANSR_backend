@@ -9,7 +9,7 @@ from core.setup import initialize_supabase
 from .tools import get_summary, get_limit, get_pending, get_transactions
 
 db = initialize_supabase()
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
 
 # 2. Create Tools
 summary_tool = Tool(

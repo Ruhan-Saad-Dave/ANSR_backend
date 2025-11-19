@@ -1,3 +1,9 @@
+"""
+This code is suppose to detect regular payments like subscription.
+Will need to be looked after.
+"""
+
+
 from collections import defaultdict
 from datetime import date, timedelta
 import numpy as np

@@ -5,3 +5,13 @@ create a complete pipeline for
 - NLP for extracting info.
 
 need to have an easy way to test the code. (accuracy and response)
+- setting alert
+- sending transaction
+- chatbot
+
+stuff that need some work:
+- future price prediction
+- graph plotting 
+- recurring payment (no idea what's that)
+
+fix the api tags called "DEfault"

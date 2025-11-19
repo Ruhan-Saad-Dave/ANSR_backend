@@ -1,15 +1,17 @@
+# change alert into limit to avoid confusion
+
 import os
 import json
 from fastapi import APIRouter 
 
-from models.alert import Alert
+from models.limit import Limit
 from core.setup import initialize_supabase
 
 alert_router = APIRouter()
 DB = initialize_supabase()
 
 @alert_router.post("/set_daily_alert", tags = ["alert"])
-async def set_daily_alert(alert: Alert):
+async def set_daily_alert(alert: Limit):
     id = alert.id
     limit = alert.limit
     response = (
@@ -24,7 +26,7 @@ async def set_daily_alert(alert: Alert):
     return {"message": "User ID does not exist"}
 
 @alert_router.post("/set_weekly_alert", tags = ["alert"])
-async def set_weekly_alert(alert: Alert):
+async def set_weekly_alert(alert: Limit):
     id = alert.id
     limit = alert.limit
     response = (
@@ -39,7 +41,7 @@ async def set_weekly_alert(alert: Alert):
     return {"message": "User ID does not exist"}
 
 @alert_router.post("/set_monthly_alert", tags = ["alert"])
-async def set_monthly_alert(alert: Alert):
+async def set_monthly_alert(alert: Limit):
     id = alert.id
     limit = alert.limit
     response = (
@@ -54,7 +56,7 @@ async def set_monthly_alert(alert: Alert):
     return {"message": "User ID does not exist"}
 
 @alert_router.post("/set_yearly_alert", tags = ["alert"])
-async def set_yearly_alert(alert: Alert):
+async def set_yearly_alert(alert: Limit):
     id = alert.id
     limit = alert.limit
     response = (
