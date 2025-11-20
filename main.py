@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from core.setup import initialize_supabase
-from routers import limit, intake, chatbot, test, supa, new_user
+from routers import limit, intake, chatbot, test, supa, new_user, pending
 #from routers.vault import prediction, recurring
 
 db = initialize_supabase()
@@ -56,6 +56,7 @@ app.include_router(chatbot.router, prefix="/chatbot")
 app.include_router(test.router, prefix="/test")
 app.include_router(supa.router, prefix="/supabase")
 app.include_router(new_user.router, prefix="/new_user")
+app.include_router(pending.router, prefix="/pending")
 
 #app.include_router(prediction.router, prefix="/prediction")  #need some work
 #app.include_router(recurring.router, prefix="/recurring") #need some work

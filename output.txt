@@ -1,0 +1,2 @@
+	
+TypeError: Failed to execute 'fetch' on 'Window': Request with GET/HEAD method cannot have body.
